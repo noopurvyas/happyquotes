@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+#
+# happyquotesctl — manage the HappyQuotes launchd service
+#
+# Usage: ./happyquotesctl {install|uninstall|start|stop|status|run}
+
+set -euo pipefail
+
+LABEL="com.happyquotes.agent"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLIST_TEMPLATE="${SCRIPT_DIR}/com.happyquotes.agent.plist"
+PLIST_DEST="${HOME}/Library/LaunchAgents/${LABEL}.plist"
+
+usage() {
+    echo "Usage: $0 {install|uninstall|start|stop|status|run}"
+    echo ""
+    echo "Commands:"
+    echo "  install    Install and load the launchd service"
+    echo "  uninstall  Stop and remove the launchd service"
+    echo "  start      Start the service (must be installed first)"
+    echo "  stop       Stop the service"
+    echo "  status     Show whether the service is loaded"
+    echo "  run        Run once immediately (no service needed)"
+    exit 1
+}
+
+cmd_install() {
+    if [ ! -f "$PLIST_TEMPLATE" ]; then
+        echo "Error: plist template not found at ${PLIST_TEMPLATE}"
+        exit 1
+    fi
+
+    mkdir -p "${HOME}/Library/LaunchAgents"
+
+    # Replace placeholders using | delimiter to avoid path conflicts
+    sed \
+        -e "s|__HAPPYQUOTES_PATH__|${SCRIPT_DIR}|g" \
+        -e "s|__HOME__|${HOME}|g" \
+        "$PLIST_TEMPLATE" > "$PLIST_DEST"
+
+    echo "Installed plist to ${PLIST_DEST}"
+
+    # Unload first if already loaded (ignore errors)
+    launchctl bootout "gui/$(id -u)/${LABEL}" 2>/dev/null || true
+
+    launchctl bootstrap "gui/$(id -u)" "$PLIST_DEST"
+    echo "Service loaded. A quote notification should appear shortly."
+}
+
+cmd_uninstall() {
+    launchctl bootout "gui/$(id -u)/${LABEL}" 2>/dev/null || true
+    if [ -f "$PLIST_DEST" ]; then
+        rm "$PLIST_DEST"
+        echo "Service uninstalled and plist removed."
+    else
+        echo "Service was not installed."
+    fi
+}
+
+cmd_start() {
+    if [ ! -f "$PLIST_DEST" ]; then
+        echo "Error: Service not installed. Run '$0 install' first."
+        exit 1
+    fi
+    launchctl kickstart "gui/$(id -u)/${LABEL}"
+    echo "Service started."
+}
+
+cmd_stop() {
+    launchctl kill SIGTERM "gui/$(id -u)/${LABEL}" 2>/dev/null || true
+    echo "Stop signal sent."
+}
+
+cmd_status() {
+    if launchctl print "gui/$(id -u)/${LABEL}" &>/dev/null; then
+        echo "Service is loaded."
+        launchctl print "gui/$(id -u)/${LABEL}" 2>/dev/null | grep -E "state|pid|last exit" || true
+    else
+        echo "Service is not loaded."
+    fi
+}
+
+cmd_run() {
+    python3 "${SCRIPT_DIR}/happyquotes.py"
+    echo "Quote displayed."
+}
+
+if [ $# -lt 1 ]; then
+    usage
+fi
+
+case "$1" in
+    install)   cmd_install ;;
+    uninstall) cmd_uninstall ;;
+    start)     cmd_start ;;
+    stop)      cmd_stop ;;
+    status)    cmd_status ;;
+    run)       cmd_run ;;
+    *)         usage ;;
+esac
