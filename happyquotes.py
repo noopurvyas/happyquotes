@@ -77,8 +77,9 @@ def show_notification(title, message):
     escaped_message = _applescript_escape(message)
     escaped_title = _applescript_escape(title)
     applescript = (
-        f'display notification "{escaped_message}" '
-        f'with title "{escaped_title}"'
+        f'display alert "{escaped_title}" '
+        f'message "{escaped_message}" '
+        f'buttons {{"OK"}} default button "OK"'
     )
 
     fd, path = tempfile.mkstemp(suffix=".applescript")
